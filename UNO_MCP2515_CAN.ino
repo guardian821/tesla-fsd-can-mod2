@@ -6,11 +6,12 @@
 #include <SPI.h>
 #include <mcp2515.h>
 
-#define LEGACY LegacyHandler
-#define HW3 HW3Handler
-#define HW4 HW4Handler // For pre-2026.2.3 HW4 firmware, compile as HW3.
+// Compile-time target selection.
+#define TARGET_LEGACY 1
+#define TARGET_HW3 2
+#define TARGET_HW4 3 // For pre-2026.2.3 HW4 firmware, compile as HW3.
 
-#define HW HW3 // Change to LEGACY, HW3, or HW4
+#define HW_TARGET TARGET_HW3 // Change to TARGET_LEGACY, TARGET_HW3, or TARGET_HW4
 
 bool enablePrint = true;
 
@@ -18,6 +19,10 @@ bool enablePrint = true;
 #define LED_PIN 13
 #define CAN_CS 10
 #define CAN_INT_PIN 2 // Reserved for optional interrupt use.
+
+// Most MCP2515 modules are 16MHz, but some use 8MHz.
+// Change this to MCP_8MHZ if your module oscillator is 8MHz.
+#define MCP2515_CLOCK MCP_16MHZ
 
 // HW4 FSD V14 options
 #define ENABLE_APPROACHING_EMERGENCY_VEHICLE_DETECTION true
@@ -52,6 +57,14 @@ inline void setBit(can_frame &frame, int bit, bool value) {
     frame.data[byteIndex] |= mask;
   } else {
     frame.data[byteIndex] &= static_cast<uint8_t>(~mask);
+  }
+}
+
+inline void sendFrame(can_frame &frame) {
+  MCP2515::ERROR tx = mcp.sendMessage(&frame);
+  if (enablePrint && tx != MCP2515::ERROR_OK) {
+    Serial.print("sendMessage failed: ");
+    Serial.println(static_cast<int>(tx));
   }
 }
 
@@ -101,12 +114,12 @@ struct LegacyHandler : public CarManagerBase {
 
       setBit(frame, 46, true);
       setSpeedProfileV12V13(frame, speedProfile);
-      mcp.sendMessage(&frame);
+      sendFrame(frame);
     }
 
     if (index == 1) {
       setBit(frame, 19, false);
-      mcp.sendMessage(&frame);
+      sendFrame(frame);
     }
 
     if (index == 0) {
@@ -164,12 +177,12 @@ struct HW3Handler : public CarManagerBase {
 
       setBit(frame, 46, true);
       setSpeedProfileV12V13(frame, speedProfile);
-      mcp.sendMessage(&frame);
+      sendFrame(frame);
     }
 
     if (index == 1) {
       setBit(frame, 19, false);
-      mcp.sendMessage(&frame);
+      sendFrame(frame);
     }
 
     if (index == 2 && selected) {
@@ -177,7 +190,7 @@ struct HW3Handler : public CarManagerBase {
       frame.data[1] &= ~(0b00111111);
       frame.data[0] |= static_cast<uint8_t>((speedOffset & 0x03) << 6);
       frame.data[1] |= static_cast<uint8_t>(speedOffset >> 2);
-      mcp.sendMessage(&frame);
+      sendFrame(frame);
     }
 
     if (index == 0) {
@@ -224,19 +237,19 @@ struct HW4Handler : public CarManagerBase {
       if (ENABLE_APPROACHING_EMERGENCY_VEHICLE_DETECTION) {
         setBit(frame, 59, true);
       }
-      mcp.sendMessage(&frame);
+      sendFrame(frame);
     }
 
     if (index == 1) {
       setBit(frame, 19, false);
       setBit(frame, 47, true);
-      mcp.sendMessage(&frame);
+      sendFrame(frame);
     }
 
     if (index == 2) {
       frame.data[7] &= ~(0x07 << 4);
       frame.data[7] |= static_cast<uint8_t>((speedProfile & 0x07) << 4);
-      mcp.sendMessage(&frame);
+      sendFrame(frame);
     }
 
     if (index == 0) {
@@ -257,18 +270,18 @@ void setup() {
   Serial.begin(115200);
   delay(1200);
 
-#if HW == LEGACY
+#if HW_TARGET == TARGET_LEGACY
   handler = &legacyHandler;
-#elif HW == HW3
+#elif HW_TARGET == TARGET_HW3
   handler = &hw3Handler;
-#elif HW == HW4
+#elif HW_TARGET == TARGET_HW4
   handler = &hw4Handler;
 #else
-#error Invalid HW selection. Use LEGACY, HW3, or HW4.
+#error Invalid HW selection. Use TARGET_LEGACY, TARGET_HW3, or TARGET_HW4.
 #endif
 
   mcp.reset();
-  MCP2515::ERROR e = mcp.setBitrate(CAN_500KBPS, MCP_16MHZ);
+  MCP2515::ERROR e = mcp.setBitrate(CAN_500KBPS, MCP2515_CLOCK);
   if (e != MCP2515::ERROR_OK) {
     Serial.println("setBitrate failed");
   }

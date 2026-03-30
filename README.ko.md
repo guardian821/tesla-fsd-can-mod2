@@ -45,11 +45,11 @@
 
 `RP2040CAN.ino`에서 `#define HW` 값을 차량 타입에 맞춰 선택해야 합니다.
 
-| Define | 대상 | 수신 CAN ID | 특징 |
-|---|---|---|---|
-| `LEGACY` | HW3 레트로핏 (구형 S/X 등) | 1006 | FSD enable bit + 속도 프로파일 |
-| `HW3` | 일반 HW3 차량 | 1016, 1021 | 팔로우 거리 기반 속도 제어 |
-| `HW4` | HW4 차량 | 1016, 1021 | 5단계 확장 속도 프로파일 |
+| Define   | 대상                       | 수신 CAN ID | 특징                           |
+| -------- | -------------------------- | ----------- | ------------------------------ |
+| `LEGACY` | HW3 레트로핏 (구형 S/X 등) | 1006        | FSD enable bit + 속도 프로파일 |
+| `HW3`    | 일반 HW3 차량              | 1016, 1021  | 팔로우 거리 기반 속도 제어     |
+| `HW4`    | HW4 차량                   | 1016, 1021  | 5단계 확장 속도 프로파일       |
 
 주의:
 
@@ -96,6 +96,18 @@ https://github.com/earlephilhower/arduino-pico/releases/download/global/package_
 #define HW HW3  // LEGACY, HW3, HW4 중 선택
 ```
 
+UNO 버전([UNO_MCP2515_CAN.ino](UNO_MCP2515_CAN.ino))은 아래처럼 설정합니다.
+
+```cpp
+#define HW_TARGET TARGET_HW3  // TARGET_LEGACY, TARGET_HW3, TARGET_HW4 중 선택
+```
+
+MCP2515 모듈 오실레이터 클럭도 함께 확인하세요.
+
+```cpp
+#define MCP2515_CLOCK MCP_16MHZ  // 8MHz 모듈이면 MCP_8MHZ
+```
+
 ### 5) 업로드
 
 1. Feather 보드를 USB로 연결
@@ -103,6 +115,52 @@ https://github.com/earlephilhower/arduino-pico/releases/download/global/package_
 3. `Upload` 클릭
 
 ### 6) 차량 CAN 배선 연결
+
+아래는 실제로 가장 많이 사용하는 2가지 연결 방식입니다.
+
+### A. Adafruit Feather RP2040 CAN 사용 시
+
+이 경우는 CAN 트랜시버가 보드에 포함되어 있어 차량 쪽 배선만 연결하면 됩니다.
+
+1. Feather 보드 CAN-H -> 차량 커넥터 CAN-H
+2. Feather 보드 CAN-L -> 차량 커넥터 CAN-L
+3. GND(접지)는 차량 섀시/공통 GND와 기준을 맞추는 것을 권장
+
+### B. Arduino UNO + MCP2515 모듈 사용 시
+
+UNO는 CAN이 내장되어 있지 않으므로 MCP2515(TJA1050 계열 포함) 모듈이 필요합니다.
+
+1. UNO <-> MCP2515(SPI) 배선
+
+| UNO 핀 | MCP2515 핀 | 설명                               |
+| ------ | ---------- | ---------------------------------- |
+| D13    | SCK        | SPI 클럭                           |
+| D12    | SO(MISO)   | MCP2515 -> UNO 데이터              |
+| D11    | SI(MOSI)   | UNO -> MCP2515 데이터              |
+| D10    | CS         | 칩 선택 (코드 기본값)              |
+| D2     | INT        | 인터럽트 입력(옵션, 코드에서 예약) |
+| 5V     | VCC        | 모듈 전원                          |
+| GND    | GND        | 공통 접지                          |
+
+참고: [UNO_MCP2515_CAN.ino](UNO_MCP2515_CAN.ino) 기준 기본 핀은 `CS=D10`, `INT=D2`입니다.
+
+추가 참고:
+
+- 우노 코드에는 CAN 송신 실패 시 `sendMessage failed: <에러코드>` 로그가 출력됩니다.
+- 시리얼 모니터에서 해당 로그가 반복되면 배선, 클럭(`MCP2515_CLOCK`), 버스 상태를 먼저 점검하세요.
+
+2. MCP2515 <-> 차량 CAN 배선
+
+| MCP2515 핀 | 차량 배선  |
+| ---------- | ---------- |
+| CAN-H      | 차량 CAN-H |
+| CAN-L      | 차량 CAN-L |
+
+3. 전원 관련 주의
+
+- 차량 12V를 UNO/MCP2515에 직접 넣지 마세요.
+- 차량 전원을 쓸 경우, 검증된 DC-DC(12V -> 5V) 레귤레이터를 사용하세요.
+- USB 전원으로 테스트 후 차량 전원으로 전환하는 순서가 안전합니다.
 
 권장 연결 지점:
 
@@ -112,21 +170,27 @@ https://github.com/earlephilhower/arduino-pico/releases/download/global/package_
 X179:
 
 | Pin | Signal |
-|---|---|
-| 13 | CAN-H |
-| 14 | CAN-L |
+| --- | ------ |
+| 13  | CAN-H  |
+| 14  | CAN-L  |
 
 X652:
 
 | Pin | Signal |
-|---|---|
-| 1 | CAN-H |
-| 2 | CAN-L |
+| --- | ------ |
+| 1   | CAN-H  |
+| 2   | CAN-L  |
 
 중요:
 
 - Feather CAN 보드의 온보드 `120 ohm` 종단 저항은 차량 버스와 중복되지 않도록 반드시 처리(절단)해야 합니다.
 - 차량 CAN은 이미 종단이 구성되어 있어 중복 종단 시 통신 오류가 발생합니다.
+
+추가 체크리스트:
+
+- CAN-H/CAN-L이 뒤바뀌면 통신이 되지 않습니다.
+- 배선 길이는 가능한 짧게 유지하고, 접촉 불량이 없도록 고정하세요.
+- 전원 인가 전 멀티미터로 단락(쇼트) 여부를 먼저 확인하세요.
 
 ## 동작 확인 방법
 
@@ -145,27 +209,28 @@ X652:
 LEGACY는 팔로우 거리 대신 속도 오프셋(km/h)로 프로파일을 선택합니다.
 
 | Speed Offset (km/h) | Profile |
-|---|---|
-| 28 | Chill |
-| 29 | Normal |
-| 30 | Hurry |
+| ------------------- | ------- |
+| 28                  | Chill   |
+| 29                  | Normal  |
+| 30                  | Hurry   |
 
 ### HW3 / HW4
 
-| Distance | HW3 | HW4 |
-|---|---|---|
-| 2 | Hurry | Max |
-| 3 | Normal | Hurry |
-| 4 | Chill | Normal |
-| 5 | - | Chill |
-| 6 | - | Sloth |
+| Distance | HW3    | HW4    |
+| -------- | ------ | ------ |
+| 2        | Hurry  | Max    |
+| 3        | Normal | Hurry  |
+| 4        | Chill  | Normal |
+| 5        | -      | Chill  |
+| 6        | -      | Sloth  |
 
 ## 가장 많이 막히는 포인트 (빠른 점검)
 
 - 업로드 실패: 보드/포트 선택이 맞는지 확인
 - CAN 통신 불량: CAN-H/CAN-L 극성, 커넥터 핀 번호, 종단 저항 중복 확인
-- 동작 안 함: `#define HW` 타입 선택 오류 여부 확인
+- 동작 안 함: RP2040 코드는 `#define HW`, 우노 코드는 `#define HW_TARGET` 설정이 맞는지 확인
 - 로그 없음: 시리얼 속도 `115200`, `enablePrint` 값 확인
+- `setBitrate failed` 발생: MCP2515 클럭 값이 모듈 실물(8MHz/16MHz)과 일치하는지 확인
 
 ## 면책 고지
 
